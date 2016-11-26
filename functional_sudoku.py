@@ -1,7 +1,9 @@
 # /usr/bin/python3
 """ Sudoku solver using only standard Python (no 3rd party libraries).
 
-# A Sudoku grid contains 9 * 9 = 81 cells, numbered thusly:
+This solver version uses only functions, no classes.
+
+A Sudoku grid contains 9 * 9 = 81 cells, numbered thusly:
 +-----------+----------+----------+
 |  0  1  2  |  3  4  5 |  6  7  8 |
 |  9 10 11  | 12 13 14 | 15 16 17 |
@@ -15,6 +17,11 @@
 | 63 64 65  | 66 67 68 | 69 70 71 |
 | 72 73 74  | 75 76 77 | 78 79 80 |
 +-----------+----------+----------+
+The grid is sub-divided into 3x3=9 "squares", each containing 3x3=9 cells.
+
+The objective is to fill the grid with values 1-9 such that no row, column
+or square contains duplicate values.  That is, they must all contain the numbers
+1-9 exactly.  This script includes the solve() function to do this.
 """
 
 import random
@@ -37,7 +44,8 @@ def create_grid(random_fill=0):
         random_fill = Number of grid squares to fill in.
 
     Returns:
-        A  list of lists filled with zeros.
+        A list of lists filled with zeros and random cells with values 1-9.
+        There is no guarantee the semi-filled grid can be solved as a Sudoku.
     """
     import random
 
@@ -152,6 +160,12 @@ def get_square(i, j, grid):
 
 def print_grid(grid, zero_replacement='?'):
     """ Displays a grid on the console.
+
+    Args:
+        grid = The 2D grid (list of lists) to print.
+        zero_replacements = The grid uses 0 to denote unknown cell values.  Use
+                            this argument to replace the zeros with a different
+                            character.
     """
     sep_style = '+-------+-------+-------+'
     row_style = '| {:d} {:d} {:d} | {:d} {:d} {:d} | {:d} {:d} {:d} |'
@@ -170,86 +184,57 @@ def print_grid(grid, zero_replacement='?'):
 
 def print_flattened_grid(grid, zero_replacement='?'):
     """ Prints a grid which has been flattened into a 1D list of 89 values.
+
+    Args:
+        grid = The 2D grid (list of lists) to print.
+        zero_replacements = The grid uses 0 to denote unknown cell values.  Use
+                            this argument to replace the zeros with a different
+                            character.
     """
+    # Restructure the grid back into the 2D shape, then print as normal.
     grid2d = [[grid[(j * 9) + i]] for j in range(9) for i in range(9)]
     print_grid(grid2d, zero_replacement=zero_replacement)
 
 
-def brute_solve(grid):
-    """ Attempts to solves the grid by brute force.
-    """
-    import copy
-    # Make a copy of the grid to fill.
-    solution = copy.deepcopy(grid)
-    print_grid(grid)
-    print_grid(solution)
-
-    first_blank = 0
-    x = 0
-    iteration = 0
-    while first_blank <= x < 81:
-        iteration += 1
-        # print('Looking at cell {} on iteration {}'.format(x, iteration))
-        i = x // 9
-        j = x % 9
-        print (x, i, j, grid[i][j], solution[i][j], iteration)
-        if grid[i][j] == 0:
-            # Search all values, from the current solution value up to 9.  We
-            # don't use zero here, as we might be resetting a solution value
-            # already deemed to be invalid
-            for value in range(solution[i][j] + 1, 10):
-                # set_cell returns True only if the value is valid, given the
-                # current grid status.
-                # print('Trying to set cell {} = {}, iteration {}'.format(
-                    # x, value, iteration))
-                if set_cell(i, j, solution, value):
-                    # If the cell filled successfully, go to the next one.
-                    # print('Set cell {} = {}.'.format(x, value))
-                    x += 1
-                    break
-            else:
-                # Could not set this cell, so clear it and revert to previous
-                # cell.
-                solution[i][j] = 0
-                x -= 1
-                # print ('Failed, x now = {}'.format(x))
-        else:
-            if x == first_blank:
-                first_blank += 1
-            x += 1
-
-    return solution
-
-
-def smarter_solve(grid):
+def solve(grid):
     """ Attempts to solves the grid by brute force, but checking possibilities.
 
     The brute force algorithm iterates through all possibilities to fill the
-    blank squares.  This algorithm also eliminates impossible values given the
-    initial grid, which reduces the number of iterations required.
+    blank squares, starting in the top-left corner and working across the rows,
+    then down columns.
 
-    Also, as the brute force approach assigns equal probability to all values,
-    the possible values are shuffled (there is no logical reason to start at 1).
+    Args:
+        grid = The 2D grid (list of lists) to solve.  Zeros denote unknown
+               values.
+
+    Returns:
+        The solved grid, if a solution was possible, otherwise None.
     """
     import copy
     # Make a copy of the grid to fill.
     solution = copy.deepcopy(grid)
-    print_grid(grid)
-    print_grid(solution)
 
-    # Make a list of all empty cell indices.
+    # Make a list of all empty cell indices and count them.
     empty_indices = [x for x in range(81) if grid[x // 9][x % 9] == 0]
     N = len(empty_indices)
-    print(N, empty_indices)
 
     # Make a list of all empty cell possibilities.
     all_possibilities = [list(range(1, 10)) for ix in range(N)]
-    loop_possibilities = copy.deepcopy(all_possibilities)
-    print(all_possibilities)
 
-    # Loop through all the empty cells, testing each combination in turn.
-    ix = 0
-    iteration = 0
+    # Copy the list of cell possibilities for use inside the solver loop.  We
+    # progressively remove values from the loop possibilities as we test their
+    # validity.  If a cell cannot be filled with any values in the loop
+    # possibilities, then we reset the possibilities and go back to the previous
+    # cell, to increments that cell's value.
+    loop_possibilities = copy.deepcopy(all_possibilities)
+
+    # Loop through all the empty cells, testing each combination in turn.  The
+    # loop will terminate if one of two conditions is met:
+    #    1. The cell index increases beyond the range of empty cells.  In this
+    #       case we have solved the grid.
+    #    2. The cell index decreases to a value lower than the first cell in the
+    #       list of empty cells.  In this case there is no solution to the grid.
+    ix, iteration = 0, 0
     while 0 <= ix < N:
         iteration += 1
 
@@ -258,9 +243,6 @@ def smarter_solve(grid):
         i = x // 9
         j = x % 9
 
-        # Save a copy of the list of possibilities for this cell.
-        # possibilities = all_possibilities[ix][:]
-
         # Search all values, from the current solution value up to 9.  We
         # don't use zero here, as we might be resetting a solution value
         # already deemed to be invalid.
@@ -268,25 +250,23 @@ def smarter_solve(grid):
             # set_cell returns True only if the value is valid, given the
             # current grid status.
             value = loop_possibilities[ix].pop()
-            # print("Checking", x, i, j, value)
             if set_cell(i, j, solution, value):
                 # If the cell filled successfully, go to the next one.
                 ix += 1
                 break
         else:
-            # Could not set this cell, so clear it and revert to previous
-            # cell.  Also reset its possible values for the next iteration.
+            # Could not set this cell, so clear it and revert to previous cell.
+            # Also reset the cells' possible values for the next iteration.
             solution[i][j] = 0
             loop_possibilities[ix] = all_possibilities[ix][:]
             ix -= 1
 
     if ix < 0:
         print('No solution found!')
+        return None
     else:
         print('Solution found!')
-        print_grid(solution)
-
-    return solution
+        return solution
 
 
 if __name__ == '__main__':
@@ -295,7 +275,6 @@ if __name__ == '__main__':
     print('Row (cell=40)', get_row(5, mygrid))
     print('Column (cell=40)', get_col(5, mygrid))
     print('Square (cell=40)', get_square(5, 5, mygrid))
-
-    solved = brute_solve(mygrid)
+    solved = solve(mygrid)
     print_grid(mygrid)
     print_grid(solved)
